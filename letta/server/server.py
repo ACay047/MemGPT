@@ -397,11 +397,16 @@ class SyncServer(Server):
             )
         # Attempt to enable LM Studio by default
         if model_settings.lmstudio_base_url:
-            self._enabled_providers.append(
-                LMStudioOpenAIProvider(
-                    base_url=model_settings.lmstudio_base_url,
-                )
+            # Auto-append v1 to the base URL
+            lmstudio_url = (
+                model_settings.lmstudio_base_url
+                if model_settings.lmstudio_base_url.endswith("/v1")
+                else model_settings.lmstudio_base_url + "/v1"
             )
+            # Set the OpenAI API key to something non-empty
+            if model_settings.openai_api_key is None:
+                model_settings.openai_api_key = "DUMMY"
+            self._enabled_providers.append(LMStudioOpenAIProvider(base_url=lmstudio_url))
 
     def load_agent(self, agent_id: str, actor: User, interface: Union[AgentInterface, None] = None) -> Agent:
         """Updated method to load agents from persisted storage"""
@@ -1277,12 +1282,14 @@ class SyncServer(Server):
             # This will be attached to the POST SSE request used under-the-hood
             letta_agent = self.load_agent(agent_id=agent_id, actor=actor)
 
-            # Disable token streaming if not OpenAI
+            # Disable token streaming if not OpenAI or Anthropic
             # TODO: cleanup this logic
             llm_config = letta_agent.agent_state.llm_config
-            if stream_tokens and (llm_config.model_endpoint_type != "openai" or "inference.memgpt.ai" in llm_config.model_endpoint):
+            if stream_tokens and (
+                llm_config.model_endpoint_type not in ["openai", "anthropic"] or "inference.memgpt.ai" in llm_config.model_endpoint
+            ):
                 warnings.warn(
-                    "Token streaming is only supported for models with type 'openai' or `inference.memgpt.ai` in the model_endpoint: agent has endpoint type {llm_config.model_endpoint_type} and {llm_config.model_endpoint}. Setting stream_tokens to False."
+                    "Token streaming is only supported for models with type 'openai', 'anthropic', or `inference.memgpt.ai` in the model_endpoint: agent has endpoint type {llm_config.model_endpoint_type} and {llm_config.model_endpoint}. Setting stream_tokens to False."
                 )
                 stream_tokens = False
 
